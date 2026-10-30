@@ -4,13 +4,12 @@ import requests
 import urllib.parse
 import re
 import json
+import io
 
-# ================= SOZLAMALAR =================
 BOT_TOKEN = "9295295972:AAGX1wIt9UXr2rbb75_m5DmOVgCdqkNpsIY"
 GROQ_API_KEY = "gsk_" + "xBtPQCeZ3m1AKWgf1s6LWGdyb3FYcJtmDhnDDZy91KMS1NUeByPY"
 CREATOR_NICK = "@Asilbekrahmatov1"
 MODEL_NAME = "openai/gpt-oss-120b"
-# ===============================================
 
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 TELEGRAM_FILE_API = f"https://api.telegram.org/file/bot{BOT_TOKEN}"
@@ -18,33 +17,28 @@ GROQ_CHAT_API = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_AUDIO_API = "https://api.groq.com/openai/v1/audio/transcriptions"
 
 session = requests.Session()
-session.headers.update({"User-Agent": "Mozilla/5.0"})
+session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
 user_sessions = {}
 
 def translate_to_english_prompt(text):
-    """O'zbekcha so'zni rasmlar uchun toza inglizcha promptga aylantirish"""
     try:
-        headers = {
-            "Authorization": f"Bearer {GROQ_API_KEY}",
-            "Content-Type": "application/json"
-        }
+        headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
         payload = {
             "model": MODEL_NAME,
             "messages": [
-                {"role": "system", "content": "You are a translator for image generation. Translate user input into a short descriptive English prompt (3-6 words) for photo generation. ONLY return the English words, nothing else."},
+                {"role": "system", "content": "You are a prompt translator. Output ONLY 3-5 simple English words describing a photo, no preamble, no punctuation, no quotes. Example: futuristic modern city skyline"},
                 {"role": "user", "content": text}
             ],
             "temperature": 0.1,
-            "max_tokens": 30
+            "max_tokens": 25
         }
         res = session.post(GROQ_CHAT_API, json=payload, headers=headers, timeout=10)
-        en_prompt = res.json()["choices"][0]["message"]["content"].strip().replace('"', '').replace('.', '')
+        en_prompt = res.json()["choices"][0]["message"]["content"].strip().replace('"', '').replace('.', '').replace('\n', ' ')
         return en_prompt
     except Exception:
         return text
 
 def ask_groq_ai(chat_id, user_message, is_voice=False):
-    """Matnli va ovozli savollarga to'g'ri AI javobi"""
     lowered = user_message.lower()
     creator_keywords = ["seni kim yaratdi", "kim yaratgan", "kimni botisan", "muallifing kim", "yaratuvching kim", "egasi kim", "kim yasadi"]
     if any(k in lowered for k in creator_keywords):
@@ -52,7 +46,7 @@ def ask_groq_ai(chat_id, user_message, is_voice=False):
 
     if chat_id not in user_sessions:
         user_sessions[chat_id] = [
-            {"role": "system", "content": "Sen juda aqlli va do'stona AI yordamchisan. Seni @Asilbekrahmatov1 yaratgan. Foydalanuvchi bilan o'zbek tilida tabiiy suhbatlash. DIQQAT: Hech qachon ASCII chiziqli matnli rasmlar chizma, bunday qilish taqiqlanadi! Agar foydalanuvchi rasm so'rasa, /rasm buyrug'idan foydalanishni ayt."}
+            {"role": "system", "content": "Sen juda aqlli va do'stona AI yordamchisan. Seni @Asilbekrahmatov1 yaratgan. Foydalanuvchi bilan o'zbek tilida tabiiy suhbatlash. DIQQAT: Hech qachon ASCII chiziqli matnli rasmlar chizma! Agar foydalanuvchi rasm so'rasa, /rasm buyrug'idan foydalanishni ayt."}
         ]
 
     prompt_content = user_message
@@ -64,17 +58,8 @@ def ask_groq_ai(chat_id, user_message, is_voice=False):
     if len(user_sessions[chat_id]) > 8:
         user_sessions[chat_id] = [user_sessions[chat_id][0]] + user_sessions[chat_id][-7:]
 
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "model": MODEL_NAME,
-        "messages": user_sessions[chat_id],
-        "temperature": 0.7,
-        "max_tokens": 1000
-    }
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+    payload = {"model": MODEL_NAME, "messages": user_sessions[chat_id], "temperature": 0.7, "max_tokens": 1000}
 
     try:
         res = session.post(GROQ_CHAT_API, json=payload, headers=headers, timeout=25)
@@ -84,52 +69,53 @@ def ask_groq_ai(chat_id, user_message, is_voice=False):
             reply = re.sub(r'```[\s\S]*?```', '', reply).strip()
             user_sessions[chat_id].append({"role": "assistant", "content": reply})
             return reply if reply else "Savolingizga javob tayyor!"
-        elif "error" in data:
-            return f"Xatolik: {data['error'].get('message', 'Nomaʼlum')}"
-        else:
-            return "Kechirasiz, javob olishda muammo bo'ldi."
+        return "Kechirasiz, javob olishda muammo bo'ldi."
     except Exception as e:
         return f"Ulanish xatosi: {e}"
 
 def transcribe_audio_groq(file_url):
-    """Ovozli xabarni matnga aylantirish"""
     try:
         audio_data = session.get(file_url, timeout=25).content
         headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
-        files = {
-            "file": ("voice.oga", audio_data, "audio/ogg"),
-            "model": (None, "whisper-large-v3")
-        }
+        files = {"file": ("voice.oga", audio_data, "audio/ogg"), "model": (None, "whisper-large-v3")}
         res = session.post(GROQ_AUDIO_API, headers=headers, files=files, timeout=30)
         return res.json().get("text", "").strip()
     except Exception:
         return ""
 
 def send_generated_image(chat_id, original_prompt):
-    """Haqiqiy 100% foto-rasm chizish (Pollinations AI)"""
-    send_message_fast(chat_id, f"🎨 Rasm chizilmoqda: \"{original_prompt}\"...\nBiroz kuting.")
+    send_message_fast(chat_id, f"🎨 Rasm chizilmoqda: \"{original_prompt}\"...\nIltimos, 3-5 soniya kuting.")
     try:
         en_prompt = translate_to_english_prompt(original_prompt)
-        clean_prompt = f"{en_prompt} realistic detailed photography 4k"
-        encoded = urllib.parse.quote(clean_prompt)
-        seed = int(time.time())
-        image_url = f"https://image.pollinations.ai/prompt/{encoded}?seed={seed}&nologo=true"
-
-        url = f"{TELEGRAM_API}/sendPhoto"
+        encoded = urllib.parse.quote(en_prompt)
+        seed = int(time.time() * 1000) % 1000000
+        image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=800&seed={seed}&nologo=true"
+        
+        # Rasmni yuklab olib, to'g'ridan-to'g'ri FOTO sifatida yuborish (linksiz)
+        img_res = session.get(image_url, timeout=35)
+        if img_res.status_code == 200 and len(img_res.content) > 1000:
+            files = {'photo': ('image.jpg', io.BytesIO(img_res.content), 'image/jpeg')}
+            data = {
+                'chat_id': chat_id,
+                'caption': f"🖼 <b>{original_prompt}</b>\n\n👨‍💻 Yaratuvchi: {CREATOR_NICK}",
+                'parse_mode': 'HTML'
+            }
+            res = session.post(f"{TELEGRAM_API}/sendPhoto", data=data, files=files, timeout=30)
+            if res.status_code == 200:
+                return
+        
+        # Agar yuklab bo'lmasa, rasm URL sifatida yuborish
         data = {
-            "chat_id": chat_id,
-            "photo": image_url,
-            "caption": f"🖼 <b>{original_prompt}</b>\n\n👨‍💻 Yaratuvchi: {CREATOR_NICK}",
-            "parse_mode": "HTML"
+            'chat_id': chat_id,
+            'photo': image_url,
+            'caption': f"🖼 <b>{original_prompt}</b>\n\n👨‍💻 Yaratuvchi: {CREATOR_NICK}",
+            'parse_mode': 'HTML'
         }
-        res = session.post(url, data=data, timeout=40)
-        if res.status_code != 200:
-            send_message_fast(chat_id, f"Rasm tayyor! Havola orqali ko'ring: {image_url}")
+        session.post(f"{TELEGRAM_API}/sendPhoto", data=data, timeout=30)
     except Exception as e:
-        send_message_fast(chat_id, f"Rasm chizishda xatolik: {e}")
+        send_message_fast(chat_id, "Kechirasiz, rasm chizishda xatolik bo'ldi.")
 
 def get_main_keyboard():
-    """Doimiy pastki tugmalar menyusi"""
     return json.dumps({
         "keyboard": [
             [{"text": "🎨 Rasm chizish"}, {"text": "🎙 Ovozli xabar"}],
@@ -168,16 +154,14 @@ def main():
                 chat_id = msg["chat"]["id"]
                 user_name = msg["chat"].get("first_name", "Foydalanuvchi")
 
-                # 1. OVOZLI XABARLAR
+                # Ovozli xabar
                 if "voice" in msg or "audio" in msg:
                     file_id = msg["voice"]["file_id"] if "voice" in msg else msg["audio"]["file_id"]
                     send_message_fast(chat_id, "🎙 Ovoz eshitilmoqda...")
                     file_info = session.get(f"{TELEGRAM_API}/getFile?file_id={file_id}").json()
                     file_path = file_info.get("result", {}).get("file_path")
-
                     if file_path:
-                        voice_url = f"{TELEGRAM_FILE_API}/{file_path}"
-                        user_text = transcribe_audio_groq(voice_url)
+                        user_text = transcribe_audio_groq(f"{TELEGRAM_FILE_API}/{file_path}")
                         if user_text:
                             send_message_fast(chat_id, f"🗣 Siz aytdingiz: \"{user_text}\"")
                             reply = ask_groq_ai(chat_id, user_text, is_voice=True)
@@ -188,7 +172,6 @@ def main():
                 if not text:
                     continue
 
-                # /start buyrug'i
                 if text == "/start":
                     welcome = (
                         f"Assalomu alaykum, {user_name}! 👋\n\n"
@@ -199,17 +182,13 @@ def main():
                     send_message_fast(chat_id, welcome, get_main_keyboard())
                     continue
 
-                # Tugmalar va buyruqlar
                 if text == "ℹ️ Yordam / Buyruqlar" or text == "/help":
                     help_text = (
                         f"📖 <b>BOT BUYRUQLARI VA QO'LLANMA:</b>\n\n"
                         f"🎨 <b>Rasm chizish:</b>\n"
-                        f"Buyruq: <code>/rasm kelajakdagi shahar</code> yoki <code>/rasm kompyuter</code>\n"
-                        f"<i>(Istalgan narsani yozsangiz, bot haqiqiy foto qilib beradi)</i>\n\n"
-                        f"🎙 <b>Ovozli xabar:</b>\n"
-                        f"Menga mikrofon orqali ovozli xabar yuborsangiz, eshitib javob qaytaraman.\n\n"
-                        f"💬 <b>Oddiy savollar:</b>\n"
-                        f"Istalgan dars, matematika yoki qiziqtirgan mavzuda savol bering.\n\n"
+                        f"Buyruq: <code>/rasm kelajakdagi shahar</code>\n\n"
+                        f"🎙 <b>Ovozli xabar:</b> Menga ovozli xabar yuborsangiz, eshitib javob qaytaraman.\n\n"
+                        f"💬 <b>Oddiy savollar:</b> Istalgan dars, matematika yoki mavzuda savol bering.\n\n"
                         f"🧹 <b>Xotirani tozalash:</b> /clear\n"
                         f"👨‍💻 <b>Yaratuvchi:</b> /creator"
                     )
@@ -217,11 +196,11 @@ def main():
                     continue
 
                 if text == "🎨 Rasm chizish":
-                    send_message_fast(chat_id, "🎨 Rasm chizish uchun quyidagicha yozing:\n\n<code>/rasm kompyuter va stol</code>\nyoki\n<code>/rasm kelajakdagi shahar</code>", get_main_keyboard())
+                    send_message_fast(chat_id, "🎨 Rasm chizish uchun quyidagicha yozing:\n\n<code>/rasm kelajakdagi shahar</code>\nyoki\n<code>/rasm kompyuter</code>", get_main_keyboard())
                     continue
 
                 if text == "🎙 Ovozli xabar":
-                    send_message_fast(chat_id, "🎙 Menga mikrofonni bosib xohlagan savolingizni ovozli xabar qilib yuboring, eshitib javob beraman!", get_main_keyboard())
+                    send_message_fast(chat_id, "🎙 Menga ovozli xabar yuboring, eshitib javob beraman!", get_main_keyboard())
                     continue
 
                 if text == "🧹 Xotirani tozalash" or text == "/clear":
@@ -243,7 +222,6 @@ def main():
                         send_message_fast(chat_id, "Iltimos, rasm tavsifini yozing. Masalan: /rasm kompyuter")
                     continue
 
-                # Oddiy savol
                 reply = ask_groq_ai(chat_id, text)
                 send_message_fast(chat_id, reply, get_main_keyboard())
 
