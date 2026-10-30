@@ -3,7 +3,7 @@ import requests
 
 BOT_TOKEN = "9295295972:AAGX1wIt9UXr2rbb75_m5DmOVgCdqkNpsIY"
 GEMINI_API_KEY = "AQ.Ab8RN6JgImQpixS9Glfm7EVQDbY8DQOQCN7txgnk1-pr1YZawQ"
-ACTIVE_MODEL = "models/gemini-3-flash-preview"
+ACTIVE_MODEL = "models/gemini-2.5-flash"
 CREATOR_NICK = "@Asilbekrahmatov1"
 
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
@@ -25,17 +25,19 @@ def ask_gemini_fast(chat_id, user_message):
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/{ACTIVE_MODEL}:generateContent?key={GEMINI_API_KEY}"
     payload = {
         "contents": user_sessions[chat_id],
-        "systemInstruction": {"parts": [{"text": f"Seni @Asilbekrahmatov1 yaratgan. Savollarga aqlli va tez javob ber."}]},
-        "generationConfig": {"temperature": 0.6, "maxOutputTokens": 800}
+        "generationConfig": {"temperature": 0.7, "maxOutputTokens": 800}
     }
     try:
-        res = session.post(endpoint, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+        res = session.post(endpoint, json=payload, headers={"Content-Type": "application/json"}, timeout=20)
         data = res.json()
         if "candidates" in data and len(data["candidates"]) > 0:
             reply = data["candidates"][0]["content"]["parts"][0]["text"]
             user_sessions[chat_id].append({"role": "model", "parts": [{"text": reply}]})
             return reply
-        return "Kechirasiz, javob shakllanmadi. Qayta yozing."
+        elif "error" in data:
+            return f"⚠️ Gemini xatosi: {data['error'].get('message', 'Nomaʼlum')}"
+        else:
+            return f"Kechirasiz, serverdan javob kelmadi: {str(data)[:150]}"
     except Exception as e:
         return f"Ulanish xatosi: {e}"
 
@@ -69,7 +71,7 @@ def main():
                 if not text:
                     continue
                 if text == "/start":
-                    send_message_fast(chat_id, f"Assalomu alaykum, {user_name}! 👋\nMen tezkor Gemini AI botiman.\n👨‍💻 Yaratuvchim: {CREATOR_NICK}")
+                    send_message_fast(chat_id, f"Assalomu alaykum, {user_name}! 👋\nMen aqlli Gemini AI botiman.\n👨‍💻 Yaratuvchim: {CREATOR_NICK}")
                     continue
                 if text == "/clear":
                     user_sessions[chat_id] = []
