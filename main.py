@@ -30,11 +30,10 @@ def translate_to_english_prompt(text):
                 {"role": "user", "content": text}
             ],
             "temperature": 0.1,
-            "max_tokens": 25
+            "max_tokens": 20
         }
         res = session.post(GROQ_CHAT_API, json=payload, headers=headers, timeout=10)
-        en_prompt = res.json()["choices"][0]["message"]["content"].strip().replace('"', '').replace('.', '').replace('\n', ' ')
-        return en_prompt
+        return res.json()["choices"][0]["message"]["content"].strip().replace('"', '').replace('.', '').replace('\n', ' ')
     except Exception:
         return text
 
@@ -84,36 +83,29 @@ def transcribe_audio_groq(file_url):
         return ""
 
 def send_generated_image(chat_id, original_prompt):
-    send_message_fast(chat_id, f"🎨 Rasm chizilmoqda: \"{original_prompt}\"...\nIltimos, 3-5 soniya kuting.")
+    send_message_fast(chat_id, f"🎨 Rasm chizilmoqda: \"{original_prompt}\"...\nIltimos, bir oz kuting.")
     try:
         en_prompt = translate_to_english_prompt(original_prompt)
-        encoded = urllib.parse.quote(en_prompt)
-        seed = int(time.time() * 1000) % 1000000
-        image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=800&seed={seed}&nologo=true"
+        clean_prompt = f"{en_prompt} realistic detailed 4k"
+        encoded = urllib.parse.quote(clean_prompt)
+        seed = int(time.time() * 1000) % 999999
         
-        # Rasmni yuklab olib, to'g'ridan-to'g'ri FOTO sifatida yuborish (linksiz)
-        img_res = session.get(image_url, timeout=35)
-        if img_res.status_code == 200 and len(img_res.content) > 1000:
+        image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=768&height=768&seed={seed}&nologo=true&private=true"
+
+        img_res = session.get(image_url, timeout=40)
+        if img_res.status_code == 200 and len(img_res.content) > 2000:
             files = {'photo': ('image.jpg', io.BytesIO(img_res.content), 'image/jpeg')}
             data = {
                 'chat_id': chat_id,
                 'caption': f"🖼 <b>{original_prompt}</b>\n\n👨‍💻 Yaratuvchi: {CREATOR_NICK}",
                 'parse_mode': 'HTML'
             }
-            res = session.post(f"{TELEGRAM_API}/sendPhoto", data=data, files=files, timeout=30)
-            if res.status_code == 200:
-                return
-        
-        # Agar yuklab bo'lmasa, rasm URL sifatida yuborish
-        data = {
-            'chat_id': chat_id,
-            'photo': image_url,
-            'caption': f"🖼 <b>{original_prompt}</b>\n\n👨‍💻 Yaratuvchi: {CREATOR_NICK}",
-            'parse_mode': 'HTML'
-        }
-        session.post(f"{TELEGRAM_API}/sendPhoto", data=data, timeout=30)
+            session.post(f"{TELEGRAM_API}/sendPhoto", data=data, files=files, timeout=30)
+            return
+        else:
+            send_message_fast(chat_id, "Kechirasiz, rasm chizishda xatolik bo'ldi. Qaytadan yozing.")
     except Exception as e:
-        send_message_fast(chat_id, "Kechirasiz, rasm chizishda xatolik bo'ldi.")
+        send_message_fast(chat_id, "Rasm chizishda xatolik yuz berdi. Qaytadan yozing.")
 
 def get_main_keyboard():
     return json.dumps({
