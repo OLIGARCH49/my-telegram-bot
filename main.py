@@ -2,6 +2,8 @@ import os
 import time
 import requests
 import urllib.parse
+import re
+import json
 
 # ================= SOZLAMALAR =================
 BOT_TOKEN = "9295295972:AAGX1wIt9UXr2rbb75_m5DmOVgCdqkNpsIY"
@@ -19,8 +21,30 @@ session = requests.Session()
 session.headers.update({"User-Agent": "Mozilla/5.0"})
 user_sessions = {}
 
+def translate_to_english_prompt(text):
+    """O'zbekcha matnni neyrotarmoq uchun fotorealistik inglizcha tavsifga aylantirish"""
+    try:
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": MODEL_NAME,
+            "messages": [
+                {"role": "system", "content": "You are an expert prompt engineer for AI image generation. Translate user text into 4-6 concise English words for a high quality realistic photo. Output ONLY the words. Example: 'kompyuter' -> 'modern desktop computer workstation detailed photorealistic'"},
+                {"role": "user", "content": text}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 40
+        }
+        res = session.post(GROQ_CHAT_API, json=payload, headers=headers, timeout=10)
+        en_prompt = res.json()["choices"][0]["message"]["content"].strip().replace('"', '').replace('.', '')
+        return en_prompt
+    except Exception:
+        return text
+
 def ask_groq_ai(chat_id, user_message, is_voice=False):
-    """Matnli va ovozli savollarga to'g'ridan-to'g'ri AI javobi"""
+    """Matnli va ovozli savollarga to'g'ri AI javobi"""
     lowered = user_message.lower()
     creator_keywords = ["seni kim yaratdi", "kim yaratgan", "kimni botisan", "muallifing kim", "yaratuvching kim", "egasi kim", "kim yasadi"]
     if any(k in lowered for k in creator_keywords):
@@ -28,12 +52,12 @@ def ask_groq_ai(chat_id, user_message, is_voice=False):
 
     if chat_id not in user_sessions:
         user_sessions[chat_id] = [
-            {"role": "system", "content": "Sen aqlli, quvnoq va har tomonlama yordam beruvchi do'stona AI yordamchisan. Seni @Asilbekrahmatov1 yaratgan. Foydalanuvchi bilan o'zbek tilida tabiiy suhbatlash. Foydalanuvchi ovozli xabar yuborsa, ovoz matniga to'g'ridan-to'g'ri to'liq javob qaytar (ovozni eshita olmasliging haqida aslo gapirma)."}
+            {"role": "system", "content": "Sen juda aqlli va do'stona AI yordamchisan. Seni @Asilbekrahmatov1 yaratgan. Foydalanuvchi bilan o'zbek tilida tabiiy suhbatlash. DIQQAT: Hech qachon ASCII chiziqli matnli rasmlar chizma, bunday qilish taqiqlanadi! Agar foydalanuvchi rasm so'rasa, /rasm buyrug'idan foydalanishni ayt."}
         ]
 
     prompt_content = user_message
     if is_voice:
-        prompt_content = f"[Foydalanuvchi ovozi matni]: {user_message}. Ushbu savolga darhol to'liq va aniq javob ber."
+        prompt_content = f"[Foydalanuvchi ovozli xabar yo'lladi]: {user_message}. Ushbu savolga o'zbek tilida to'liq va lo'nda javob ber."
 
     user_sessions[chat_id].append({"role": "user", "content": prompt_content})
 
@@ -57,8 +81,10 @@ def ask_groq_ai(chat_id, user_message, is_voice=False):
         data = res.json()
         if "choices" in data and len(data["choices"]) > 0:
             reply = data["choices"][0]["message"]["content"]
+            # ASCII chiziqli rasmlarni tozalash
+            reply = re.sub(r'```[\s\S]*?```', '', reply).strip()
             user_sessions[chat_id].append({"role": "assistant", "content": reply})
-            return reply
+            return reply if reply else "Savolingizga javob tayyor!"
         elif "error" in data:
             return f"Xatolik: {data['error'].get('message', 'Nomaʼlum')}"
         else:
@@ -67,7 +93,7 @@ def ask_groq_ai(chat_id, user_message, is_voice=False):
         return f"Ulanish xatosi: {e}"
 
 def transcribe_audio_groq(file_url):
-    """Ovozli xabarni (Voice) matnga aylantirish (Whisper)"""
+    """Ovozli xabarni matnga aylantirish"""
     try:
         audio_data = session.get(file_url, timeout=25).content
         headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
@@ -76,44 +102,53 @@ def transcribe_audio_groq(file_url):
             "model": (None, "whisper-large-v3")
         }
         res = session.post(GROQ_AUDIO_API, headers=headers, files=files, timeout=30)
-        result = res.json()
-        return result.get("text", "").strip()
-    except Exception as e:
-        print(f"Audio xatosi: {e}")
+        return res.json().get("text", "").strip()
+    except Exception:
         return ""
 
-def send_generated_image(chat_id, prompt):
-    """Rasm chizish (Pollinations AI)"""
-    send_message_fast(chat_id, f"🎨 Rasm chizilmoqda: \"{prompt}\"...\nBiroz kuting.")
+def send_generated_image(chat_id, original_prompt):
+    """Haqiqiy 100% foto-rasm chizish (Flux AI)"""
+    send_message_fast(chat_id, f"🎨 Rasm chizilmoqda: \"{original_prompt}\"...\nBiroz kuting.")
     try:
-        encoded_prompt = urllib.parse.quote(prompt)
-        image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
-        
+        en_prompt = translate_to_english_prompt(original_prompt)
+        encoded = urllib.parse.quote(en_prompt)
+        image_url = f"https://image.pollinations.ai/prompt/{encoded}?model=flux&width=1024&height=1024&nologo=true"
+
         url = f"{TELEGRAM_API}/sendPhoto"
         data = {
             "chat_id": chat_id,
             "photo": image_url,
-            "caption": f"🖼 <b>{prompt}</b>\n\n👨‍💻 Yaratuvchi: {CREATOR_NICK}",
+            "caption": f"🖼 <b>{original_prompt}</b>\n\n👨‍💻 Yaratuvchi: {CREATOR_NICK}",
             "parse_mode": "HTML"
         }
-        res = session.post(url, data=data, timeout=35)
+        res = session.post(url, data=data, timeout=40)
         if res.status_code != 200:
-            send_message_fast(chat_id, f"Rasm tayyor! Uni ko'rish: {image_url}")
+            send_message_fast(chat_id, f"Rasm tayyor! Havola orqali ko'ring: {image_url}")
     except Exception as e:
         send_message_fast(chat_id, f"Rasm chizishda xatolik: {e}")
 
-def send_message_fast(chat_id, text):
+def get_main_keyboard():
+    """Doimiy pastki tugmalar menyusi"""
+    return json.dumps({
+        "keyboard": [
+            [{"text": "🎨 Rasm chizish"}, {"text": "🎙 Ovozli xabar"}],
+            [{"text": "ℹ️ Yordam / Buyruqlar"}, {"text": "🧹 Xotirani tozalash"}],
+            [{"text": "👨‍💻 Yaratuvchi"}]
+        ],
+        "resize_keyboard": True
+    })
+
+def send_message_fast(chat_id, text, reply_markup=None):
     try:
-        if len(text) > 4000:
-            for chunk in [text[i:i+4000] for i in range(0, len(text), 4000)]:
-                session.post(f"{TELEGRAM_API}/sendMessage", data={"chat_id": chat_id, "text": chunk}, timeout=6)
-        else:
-            session.post(f"{TELEGRAM_API}/sendMessage", data={"chat_id": chat_id, "text": text}, timeout=6)
+        data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+        if reply_markup:
+            data["reply_markup"] = reply_markup
+        session.post(f"{TELEGRAM_API}/sendMessage", data=data, timeout=8)
     except Exception:
         pass
 
 def main():
-    print("🚀 Barcha funksiyalari to'liq AI Bot ishga tushdi!")
+    print("🚀 Barcha funksiyalari to'liq AI Bot 24/7 ishga tushdi!")
     last_update_id = 0
 
     while True:
@@ -132,11 +167,10 @@ def main():
                 chat_id = msg["chat"]["id"]
                 user_name = msg["chat"].get("first_name", "Foydalanuvchi")
 
-                # 1. OVOZLI XABARLARNI QABUL QILISH
+                # 1. OVOZLI XABARLAR
                 if "voice" in msg or "audio" in msg:
                     file_id = msg["voice"]["file_id"] if "voice" in msg else msg["audio"]["file_id"]
                     send_message_fast(chat_id, "🎙 Ovoz eshitilmoqda...")
-                    
                     file_info = session.get(f"{TELEGRAM_API}/getFile?file_id={file_id}").json()
                     file_path = file_info.get("result", {}).get("file_path")
 
@@ -146,9 +180,7 @@ def main():
                         if user_text:
                             send_message_fast(chat_id, f"🗣 Siz aytdingiz: \"{user_text}\"")
                             reply = ask_groq_ai(chat_id, user_text, is_voice=True)
-                            send_message_fast(chat_id, reply)
-                        else:
-                            send_message_fast(chat_id, "Ovozingizni aniqlay olmadim. Qaytadan gapirib ko'ring.")
+                            send_message_fast(chat_id, reply, get_main_keyboard())
                     continue
 
                 text = msg.get("text", "")
@@ -159,32 +191,60 @@ def main():
                 if text == "/start":
                     welcome = (
                         f"Assalomu alaykum, {user_name}! 👋\n\n"
-                        f"Men barcha imkoniyatlarga ega aqlli AI yordamchingizman:\n\n"
-                        f"💬 <b>Matn:</b> Menga istalgan savolni yozing.\n"
-                        f"🎙 <b>Ovoz:</b> Ovozli xabar yuborsangiz, to'liq tushunib javob beraman.\n"
-                        f"🎨 <b>Rasm chizish:</b> <code>/rasm tavsif</code> deb yozing.\n\n"
+                        f"Men barcha imkoniyatlarga ega aqlli AI yordamchingizman!\n\n"
+                        f"Pastdagi <b>Menyu tugmalari</b> orqali botdan oson foydalanishingiz mumkin 👇\n\n"
                         f"👨‍💻 Yaratuvchim: {CREATOR_NICK}"
                     )
-                    session.post(f"{TELEGRAM_API}/sendMessage", data={"chat_id": chat_id, "text": welcome, "parse_mode": "HTML"})
+                    send_message_fast(chat_id, welcome, get_main_keyboard())
                     continue
 
-                if text == "/clear":
+                # Tugmalar va buyruqlar
+                if text == "ℹ️ Yordam / Buyruqlar" or text == "/help":
+                    help_text = (
+                        f"📖 <b>BOT BUYRUQLARI VA QO'LLANMA:</b>\n\n"
+                        f"🎨 <b>Rasm chizish:</b>\n"
+                        f"Buyruq: <code>/rasm kompyuter</code> yoki <code>/rasm Ferrari</code>\n"
+                        f"<i>(Istalgan narsani yozsangiz, bot haqiqiy foto qilib beradi)</i>\n\n"
+                        f"🎙 <b>Ovozli xabar:</b>\n"
+                        f"Menga mikrofon orqali ovozli xabar yuborsangiz, eshitib javob qaytaraman.\n\n"
+                        f"💬 <b>Oddiy savollar:</b>\n"
+                        f"Istalgan dars, matematika yoki qiziqtirgan mavzuda savol bering.\n\n"
+                        f"🧹 <b>Xotirani tozalash:</b> /clear\n"
+                        f"👨‍💻 <b>Yaratuvchi:</b> /creator"
+                    )
+                    send_message_fast(chat_id, help_text, get_main_keyboard())
+                    continue
+
+                if text == "🎨 Rasm chizish":
+                    send_message_fast(chat_id, "🎨 Rasm chizish uchun quyidagicha yozing:\n\n<code>/rasm kompyuter va stol</code>\nyoki\n<code>/rasm kelajakdagi shahar</code>", get_main_keyboard())
+                    continue
+
+                if text == "🎙 Ovozli xabar":
+                    send_message_fast(chat_id, "🎙 Menga mikrofonni bosib xohlagan savolingizni ovozli xabar qilib yuboring, eshitib javob beraman!", get_main_keyboard())
+                    continue
+
+                if text == "🧹 Xotirani tozalash" or text == "/clear":
                     user_sessions[chat_id] = []
-                    send_message_fast(chat_id, "Suhbat xotirasi tozalandi.")
+                    send_message_fast(chat_id, "🧹 Suhbat xotirasi tozalandi. Yangi savolingizni bering!", get_main_keyboard())
                     continue
 
-                # 2. RASM CHIZISH
-                if text.startswith("/rasm") or text.startswith("/image") or text.lower().startswith("rasm chiz"):
-                    prompt = text.replace("/rasm", "").replace("/image", "").replace("rasm chiz", "").strip()
+                if text == "👨‍💻 Yaratuvchi" or text == "/creator":
+                    send_message_fast(chat_id, f"Meni @Asilbekrahmatov1 (Asilbek Rahmatov) yaratgan! 🚀", get_main_keyboard())
+                    continue
+
+                # Rasm chizish
+                lowered_text = text.lower()
+                if lowered_text.startswith("/rasm") or lowered_text.startswith("/image") or "rasmini chiz" in lowered_text or "rasm chiz" in lowered_text:
+                    prompt = text.replace("/rasm", "").replace("/image", "").replace("rasmini chiz", "").replace("rasm chiz", "").strip()
                     if prompt:
                         send_generated_image(chat_id, prompt)
                     else:
-                        send_message_fast(chat_id, "Iltimos, rasm tavsifini yozing. Masalan: /rasm moviy ko'l va tog'lar")
+                        send_message_fast(chat_id, "Iltimos, rasm tavsifini yozing. Masalan: /rasm kompyuter")
                     continue
 
-                # 3. ODDIY MATN
+                # Oddiy savol
                 reply = ask_groq_ai(chat_id, text)
-                send_message_fast(chat_id, reply)
+                send_message_fast(chat_id, reply, get_main_keyboard())
 
         except Exception:
             time.sleep(1)
