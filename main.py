@@ -140,7 +140,8 @@ def main():
                         user_text = transcribe_audio_groq(voice_url)
                         if user_text:
                             send_message_fast(chat_id, f"🗣 Siz aytdingiz: \"{user_text}\"")
-                            reply = ask_groq_ai(chat_id, user_text)
+                        voice_prompt = f"[Foydalanuvchi ovozli xabar orqali so'radi]: {user_text}. Iltimos, bu savolga to'g'ridan-to'g'ri va aniq javob ber (ovoz eshita olmasliging haqida gapirma)."
+reply = ask_groq_ai(chat_id, voice_prompt)
                             send_message_fast(chat_id, reply)
                         else:
                             send_message_fast(chat_id, "Ovozni aniqlab bo'lmadi. Qaytadan aniqroq gapiring.")
