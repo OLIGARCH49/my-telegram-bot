@@ -22,7 +22,7 @@ session.headers.update({"User-Agent": "Mozilla/5.0"})
 user_sessions = {}
 
 def translate_to_english_prompt(text):
-    """O'zbekcha matnni neyrotarmoq uchun fotorealistik inglizcha tavsifga aylantirish"""
+    """O'zbekcha so'zni rasmlar uchun toza inglizcha promptga aylantirish"""
     try:
         headers = {
             "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -31,11 +31,11 @@ def translate_to_english_prompt(text):
         payload = {
             "model": MODEL_NAME,
             "messages": [
-                {"role": "system", "content": "You are an expert prompt engineer for AI image generation. Translate user text into 4-6 concise English words for a high quality realistic photo. Output ONLY the words. Example: 'kompyuter' -> 'modern desktop computer workstation detailed photorealistic'"},
+                {"role": "system", "content": "You are a translator for image generation. Translate user input into a short descriptive English prompt (3-6 words) for photo generation. ONLY return the English words, nothing else."},
                 {"role": "user", "content": text}
             ],
-            "temperature": 0.2,
-            "max_tokens": 40
+            "temperature": 0.1,
+            "max_tokens": 30
         }
         res = session.post(GROQ_CHAT_API, json=payload, headers=headers, timeout=10)
         en_prompt = res.json()["choices"][0]["message"]["content"].strip().replace('"', '').replace('.', '')
@@ -81,7 +81,6 @@ def ask_groq_ai(chat_id, user_message, is_voice=False):
         data = res.json()
         if "choices" in data and len(data["choices"]) > 0:
             reply = data["choices"][0]["message"]["content"]
-            # ASCII chiziqli rasmlarni tozalash
             reply = re.sub(r'```[\s\S]*?```', '', reply).strip()
             user_sessions[chat_id].append({"role": "assistant", "content": reply})
             return reply if reply else "Savolingizga javob tayyor!"
@@ -107,12 +106,14 @@ def transcribe_audio_groq(file_url):
         return ""
 
 def send_generated_image(chat_id, original_prompt):
-    """Haqiqiy 100% foto-rasm chizish (Flux AI)"""
+    """Haqiqiy 100% foto-rasm chizish (Pollinations AI)"""
     send_message_fast(chat_id, f"🎨 Rasm chizilmoqda: \"{original_prompt}\"...\nBiroz kuting.")
     try:
         en_prompt = translate_to_english_prompt(original_prompt)
-        encoded = urllib.parse.quote(en_prompt)
-        image_url = f"https://image.pollinations.ai/prompt/{encoded}?model=flux&width=1024&height=1024&nologo=true"
+        clean_prompt = f"{en_prompt} realistic detailed photography 4k"
+        encoded = urllib.parse.quote(clean_prompt)
+        seed = int(time.time())
+        image_url = f"https://image.pollinations.ai/prompt/{encoded}?seed={seed}&nologo=true"
 
         url = f"{TELEGRAM_API}/sendPhoto"
         data = {
@@ -148,7 +149,7 @@ def send_message_fast(chat_id, text, reply_markup=None):
         pass
 
 def main():
-    print("🚀 Barcha funksiyalari to'liq AI Bot 24/7 ishga tushdi!")
+    print("🚀 Mukammal AI Bot 24/7 ishga tushdi!")
     last_update_id = 0
 
     while True:
@@ -203,7 +204,7 @@ def main():
                     help_text = (
                         f"📖 <b>BOT BUYRUQLARI VA QO'LLANMA:</b>\n\n"
                         f"🎨 <b>Rasm chizish:</b>\n"
-                        f"Buyruq: <code>/rasm kompyuter</code> yoki <code>/rasm Ferrari</code>\n"
+                        f"Buyruq: <code>/rasm kelajakdagi shahar</code> yoki <code>/rasm kompyuter</code>\n"
                         f"<i>(Istalgan narsani yozsangiz, bot haqiqiy foto qilib beradi)</i>\n\n"
                         f"🎙 <b>Ovozli xabar:</b>\n"
                         f"Menga mikrofon orqali ovozli xabar yuborsangiz, eshitib javob qaytaraman.\n\n"
