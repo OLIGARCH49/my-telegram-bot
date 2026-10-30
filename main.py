@@ -5,7 +5,7 @@ BOT_TOKEN = "9295295972:AAGX1wIt9UXr2rbb75_m5DmOVgCdqkNpsIY"
 # Yangi 100% ishlaydigan Groq AI kaliti:
 GROQ_API_KEY = "gsk_" + "xBtPQCeZ3m1AKWgf1s6LWGdyb3FYcJtmDhnDDZy91KMS1NUeByPY"
 CREATOR_NICK = "@Asilbekrahmatov1"
-MODEL_NAME = "llama-3.3-70b-versatile"
+MODEL_NAME = "openai/gpt-oss-120b"
 
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 GROQ_API = "https://api.groq.com/openai/v1/chat/completions"
